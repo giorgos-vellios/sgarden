@@ -1,9 +1,12 @@
 package com.sgarden.service;
 
+import com.sgarden.config.ValidationException;
+import com.sgarden.dto.PagedProductsResponse;
 import com.sgarden.dto.ProductRequest;
 import com.sgarden.dto.ProductStatsResponse;
 import com.sgarden.model.Product;
 import com.sgarden.repository.ProductRepository;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -11,9 +14,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.DoubleSummaryStatistics;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -22,8 +27,27 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final MongoTemplate mongoTemplate;
 
+    private static final Set<String> VALID_CATEGORIES =
+            Set.of("Electronics", "Accessories", "Storage", "Networking");
+
     // CODE QUALITY ISSUE: unused variable
     private final String serviceName = "ProductService";
+
+    private void validateProduct(ProductRequest request, boolean requireName) {
+        Map<String, String> errors = new HashMap<>();
+        if (requireName && (request.getName() == null || request.getName().trim().isEmpty())) {
+            errors.put("name", "Name is required");
+        }
+        if (request.getPrice() != null && request.getPrice() <= 0) {
+            errors.put("price", "Price must be a positive number");
+        }
+        if (request.getCategory() != null && !VALID_CATEGORIES.contains(request.getCategory())) {
+            errors.put("category", "Category must be one of: Accessories, Electronics, Networking, Storage");
+        }
+        if (!errors.isEmpty()) {
+            throw new ValidationException(errors);
+        }
+    }
 
     public ProductService(ProductRepository productRepository, MongoTemplate mongoTemplate) {
         this.productRepository = productRepository;
@@ -35,12 +59,32 @@ public class ProductService {
         return productRepository.findAll();
     }
 
+    public PagedProductsResponse getPagedProducts(int page, int limit, String sort, String order) {
+        long total = productRepository.count();
+        Query query = new Query();
+
+        if (sort != null && !sort.isBlank()) {
+            Sort.Direction direction = "desc".equalsIgnoreCase(order) ? Sort.Direction.DESC : Sort.Direction.ASC;
+            query.with(Sort.by(direction, sort));
+        }
+
+        int safePage = Math.max(1, page);
+        int safeLimit = Math.max(1, limit);
+        int skip = (safePage - 1) * safeLimit;
+        query.skip(skip);
+        query.limit(safeLimit);
+
+        List<Product> data = mongoTemplate.find(query, Product.class);
+        return new PagedProductsResponse(data, safePage, safeLimit, total);
+    }
+
     public Optional<Product> getProductById(String id) {
         System.out.println("Fetching product: " + id);
         return productRepository.findById(id);
     }
 
     public Product createProduct(ProductRequest request) {
+        validateProduct(request, true);
         Product product = new Product();
         product.setName(request.getName());
         product.setDescription(request.getDescription());
@@ -52,6 +96,7 @@ public class ProductService {
     }
 
     public Optional<Product> updateProduct(String id, ProductRequest request) {
+        validateProduct(request, false);
         return productRepository.findById(id).map(product -> {
             if (request.getName() != null) product.setName(request.getName());
             if (request.getDescription() != null) product.setDescription(request.getDescription());
@@ -122,6 +167,16 @@ public class ProductService {
             query.addCriteria(new Criteria().andOperator(criteria.toArray(new Criteria[0])));
         }
         return mongoTemplate.find(query, Product.class);
+    }
+
+    public Optional<Product> updateStock(String id, Integer stock) {
+        if (stock == null || stock < 0) {
+            throw new ValidationException(Map.of("stock", "Stock cannot be negative"));
+        }
+        return productRepository.findById(id).map(product -> {
+            product.setStock(stock);
+            return productRepository.save(product);
+        });
     }
 
     public boolean deleteProduct(String id) {

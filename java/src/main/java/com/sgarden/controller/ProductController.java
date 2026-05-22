@@ -1,8 +1,10 @@
 package com.sgarden.controller;
 
 import com.sgarden.dto.ErrorResponse;
+import com.sgarden.dto.PagedProductsResponse;
 import com.sgarden.dto.ProductRequest;
 import com.sgarden.dto.ProductStatsResponse;
+import com.sgarden.dto.StockUpdateRequest;
 import com.sgarden.model.Product;
 import com.sgarden.repository.ProductRepository;
 import com.sgarden.service.ProductService;
@@ -28,8 +30,12 @@ public class ProductController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Product>> getAllProducts() {
-        return ResponseEntity.ok(productService.getAllProducts());
+    public ResponseEntity<PagedProductsResponse> getAllProducts(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) String sort,
+            @RequestParam(defaultValue = "asc") String order) {
+        return ResponseEntity.ok(productService.getPagedProducts(page, limit, sort, order));
     }
 
     @GetMapping("/stats")
@@ -63,6 +69,14 @@ public class ProductController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateProduct(@PathVariable String id, @RequestBody ProductRequest request) {
         return productService.updateProduct(id, request)
+                .map(product -> ResponseEntity.ok((Object) product))
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(new ErrorResponse("Product not found")));
+    }
+
+    @PatchMapping("/{id}/stock")
+    public ResponseEntity<?> updateStock(@PathVariable String id, @RequestBody StockUpdateRequest body) {
+        return productService.updateStock(id, body.getStock())
                 .map(product -> ResponseEntity.ok((Object) product))
                 .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(new ErrorResponse("Product not found")));
