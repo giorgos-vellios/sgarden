@@ -49,6 +49,39 @@ async def get_all_products():
     return products
 
 
+@router.get("/search")
+async def search_products(
+    q: str = None,
+    category: str = None,
+    minPrice: float = None,
+    maxPrice: float = None,
+):
+    filter_query = {}
+
+    if q:
+        filter_query["$and"] = filter_query.get("$and", [])
+        filter_query["$and"].append({
+            "$or": [
+                {"name": {"$regex": q, "$options": "i"}},
+                {"description": {"$regex": q, "$options": "i"}},
+            ]
+        })
+
+    if category:
+        filter_query["category"] = category
+
+    if minPrice is not None:
+        filter_query.setdefault("price", {})["$gte"] = minPrice
+
+    if maxPrice is not None:
+        filter_query.setdefault("price", {})["$lte"] = maxPrice
+
+    products = []
+    async for product in products_collection.find(filter_query):
+        products.append(product_to_response(product))
+    return products
+
+
 @router.get("/{product_id}")
 async def get_product_by_id(product_id: str):
     if not ObjectId.is_valid(product_id):
