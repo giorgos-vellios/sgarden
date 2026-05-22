@@ -49,6 +49,25 @@ async def get_all_products():
     return products
 
 
+@router.get("/stats")
+async def get_product_stats():
+    products = await products_collection.find().to_list(length=None)
+    total = len(products)
+    prices = [p["price"] for p in products if p.get("price") is not None]
+    category_count = {}
+    for p in products:
+        cat = p.get("category")
+        if cat:
+            category_count[cat] = category_count.get(cat, 0) + 1
+    return {
+        "totalCount": total,
+        "averagePrice": sum(prices) / len(prices) if prices else 0,
+        "minPrice": min(prices) if prices else None,
+        "maxPrice": max(prices) if prices else None,
+        "categoryCount": category_count,
+    }
+
+
 @router.get("/search")
 async def search_products(
     q: str = None,
